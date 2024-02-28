@@ -125,6 +125,10 @@ if __name__ == "__main__":
             time.sleep(2)
             driver.implicitly_wait(5)    
             findPost()
+            driver.close()
+            time.sleep(2)
+            driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+
         print(findPostDict)
         
         while(True):
@@ -133,10 +137,11 @@ if __name__ == "__main__":
                 time.sleep(2)
                 driver.implicitly_wait(5)
                 alertNewPost()
+                driver.close()
+                time.sleep(2)
+                driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
-            driver.close()
-            driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
-            time.sleep(10 * 60)                
+            time.sleep(9 * 60)
 
     except KeyboardInterrupt:
         postMessage(slackUrl, "Server Down!")

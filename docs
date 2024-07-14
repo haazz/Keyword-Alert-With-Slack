@@ -1,0 +1,5 @@
+python3 -m venv ./keyword_alert_venv
+
+source ./keyword_alert_venv/bin/activate
+
+pip install -r requirements.txt

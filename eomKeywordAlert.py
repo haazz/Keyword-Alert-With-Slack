@@ -11,14 +11,15 @@ import time
 import requests
 import pymysql
 import os
+import logging
 
+# 로깅 설정
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def checkKeywordExistDB(mysqlCursor, keyword):
     selectKeywordSqlQuery = "SELECT keyword FROM keywordtable WHERE keyword like \'" + keyword + "\'"
     result = mysqlCursor.execute(selectKeywordSqlQuery)
-    if (result == 0):
-        return False
-    return True
+    return result != 0
 
 def insertKeywordDB(mysqlCursor, mysqlConnect, keyword):
     insertSqlQuery = "insert into keywordtable values(%s)"
@@ -42,56 +43,80 @@ def postMessage(url, text):
         header = {'Content-type': 'application/json'}
         icon_emoji = ":slack:"
         username = "keyword-bot"
-        attachments = [{
-            "color": "good",
-            "text": text
-        }]
-
+        attachments = [{"color": "good", "text": text}]
         data = {"username": username, "attachments": attachments, "icon_emoji": icon_emoji}
         print(data)
 
         # 메세지 전송
         return requests.post(url, headers=header, json=data)
-        
     except Exception as e:
         exit(0)
 
 def findPost():
-    searchButton = driver.find_element(By.CSS_SELECTOR, ".trigger-search")
-    searchButton.click()
-    time.sleep(1)
-    for keyword in findPostDict:
-        searchInput = driver.find_element(By.CSS_SELECTOR, "._search .keyword")
-        searchInput.clear()
-        searchInput.send_keys(keyword)
-        searchInput.send_keys(Keys.RETURN)
-        time.sleep(2)
-        posts = driver.find_elements(By.CSS_SELECTOR, ".card_content .pjax")
-        for post in posts:
-            postTitle = post.get_attribute("text")
-            if postTitle not in findPostDict[keyword]:
-                findPostDict[keyword].append(postTitle)
+    try:
+        searchButton = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".trigger-search"))
+        )
+        searchButton.click()
+        time.sleep(1)
+        for keyword in findPostDict:
+            searchInput = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "._search .keyword"))
+            )
+            searchInput.clear()
+            searchInput.send_keys(keyword)
+            searchInput.send_keys(Keys.RETURN)
+            time.sleep(2)
+            posts = WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".card_content .pjax"))
+            )
+            for post in posts:
+                try:
+                    postTitle = driver.execute_script("return arguments[0].textContent;", post)
+                    if postTitle not in findPostDict[keyword]:
+                        findPostDict[keyword].append(postTitle)
+                except StaleElementReferenceException:
+                    logging.warning(f"Stale element encountered for keyword: {keyword}")
+                    continue
+
+    except TimeoutException:
+        logging.error("Timeout occurred while finding posts")
+
 
 def alertNewPost():
-    searchButton = driver.find_element(By.CSS_SELECTOR, ".trigger-search")
-    searchButton.click()
-    time.sleep(1)
-    for keyword in findPostDict:
-        searchInput = driver.find_element(By.CSS_SELECTOR, "._search .keyword")
-        searchInput.clear()
-        searchInput.send_keys(keyword)
-        searchInput.send_keys(Keys.RETURN)
-        time.sleep(2)
-        posts = driver.find_elements(By.CSS_SELECTOR, ".card_content .pjax")
-        for post in posts:
-            postTitle = post.get_attribute("text")
-            if postTitle not in findPostDict[keyword]:
-                response = postMessage(slackUrl, postTitle + "\n" + post.get_attribute("href"))
-                findPostDict[keyword].append(postTitle)
-                print(postTitle)
-                print(response)
-        while len(findPostDict[keyword]) > 100:
-            findPostDict[keyword].pop(0)
+    try:
+        searchButton = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".trigger-search"))
+        )
+        searchButton.click()
+        time.sleep(1)
+        for keyword in findPostDict:
+            searchInput = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "._search .keyword"))
+            )
+            searchInput.clear()
+            searchInput.send_keys(keyword)
+            searchInput.send_keys(Keys.RETURN)
+            time.sleep(2)
+            posts = WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".card_content .pjax"))
+            )
+            for post in posts:
+                try:
+                    postTitle = driver.execute_script("return arguments[0].textContent;", post)
+                    if postTitle not in findPostDict[keyword]:
+                        postUrl = post.get_attribute("href")
+                        response = postMessage(slackUrl, f"{postTitle}\n{postUrl}")
+                        findPostDict[keyword].append(postTitle)
+                        logging.info(f"New post found: {postTitle}")
+                        logging.info(f"Slack response: {response}")
+                except StaleElementReferenceException:
+                    logging.warning(f"Stale element encountered for keyword: {keyword}")
+                    continue
+            while len(findPostDict[keyword]) > 100:
+                findPostDict[keyword].pop(0)
+    except TimeoutException:
+        logging.error("Timeout occurred while alerting new posts")
 
 if __name__ == "__main__":
     # .env 파일 가져오기
@@ -100,7 +125,7 @@ if __name__ == "__main__":
     # mysql 연결
     mysqlConnect = pymysql.connect(host=os.environ.get('MYSQL_HOST'), user=os.environ.get('MYSQL_USER'), password=os.environ.get('MYSQL_PASSWORD'), db=os.environ.get('MYSQL_DB_NAME'), charset='utf8')
     mysqlCursor = mysqlConnect.cursor()
-
+    
     # slack bot request url
     slackUrl = os.environ.get("SLACK_URL")
 
@@ -114,38 +139,38 @@ if __name__ == "__main__":
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
     crawlUrlList = [os.environ.get('CRAWL_URL_1'), os.environ.get('CRAWL_URL_2')]
 
-    findPostDict = {}
+    findPostDict = {keyword[0]: [] for keyword in selectKeywordListDB(mysqlCursor)}
+    logging.info(f"Initial findPostDict: {findPostDict}")
     try:
-        for keyword in selectKeywordListDB(mysqlCursor):
-            findPostDict[keyword[0]] = []
-        print(findPostDict)
-
         for crawlUrl in crawlUrlList:
             driver.get(crawlUrl)
             time.sleep(2)
             driver.implicitly_wait(5)    
             findPost()
-            driver.close()
+            driver.quit()
             time.sleep(2)
             driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
-        print(findPostDict)
+        logging.info(f"Updated findPostDict: {findPostDict}")
         
-        while(True):
+        while True:
             for crawlUrl in crawlUrlList:
                 driver.get(crawlUrl)
                 time.sleep(2)
                 driver.implicitly_wait(5)
                 alertNewPost()
-                driver.close()
+                driver.quit()
                 time.sleep(2)
                 driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
             time.sleep(9 * 60)
 
+
     except KeyboardInterrupt:
         postMessage(slackUrl, "Server Down!")
+        logging.info("KeyboardInterrupt: Server shutting down")
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+    finally:
         mysqlConnect.close()
-        driver.close()
-    
-    driver.close()
+        driver.quit()

@@ -7,6 +7,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException
 
 from dotenv import load_dotenv
 import time
@@ -14,6 +16,7 @@ import requests
 import pymysql
 import os
 import logging
+import traceback
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -52,24 +55,25 @@ def postMessage(url, text):
         # 메세지 전송
         return requests.post(url, headers=header, json=data)
     except Exception as e:
+        logging.error("Slack-Bot postMessage fail!")
         exit(0)
 
 def findPost():
     try:
-        searchButton = WebDriverWait(driver, 10).until(
+        searchButton = WebDriverWait(driver, 100).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".trigger-search"))
         )
         searchButton.click()
         time.sleep(1)
         for keyword in findPostDict:
-            searchInput = WebDriverWait(driver, 10).until(
+            searchInput = WebDriverWait(driver, 100).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "._search .keyword"))
             )
             searchInput.clear()
             searchInput.send_keys(keyword)
             searchInput.send_keys(Keys.RETURN)
             time.sleep(2)
-            posts = WebDriverWait(driver, 10).until(
+            posts = WebDriverWait(driver, 100).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".card_content .pjax"))
             )
             for post in posts:
@@ -90,20 +94,20 @@ def findPost():
 
 def alertNewPost():
     try:
-        searchButton = WebDriverWait(driver, 10).until(
+        searchButton = WebDriverWait(driver, 100).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".trigger-search"))
         )
         searchButton.click()
-        time.sleep(1)
+        time.sleep(3)
         for keyword in findPostDict:
-            searchInput = WebDriverWait(driver, 10).until(
+            searchInput = WebDriverWait(driver, 100).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "._search .keyword"))
             )
             searchInput.clear()
             searchInput.send_keys(keyword)
             searchInput.send_keys(Keys.RETURN)
             time.sleep(2)
-            posts = WebDriverWait(driver, 10).until(
+            posts = WebDriverWait(driver, 100).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".card_content .pjax"))
             )
             for post in posts:
@@ -138,8 +142,10 @@ if __name__ == "__main__":
     userAgent = os.environ.get("USER_AGENT")
     
     # chrome driver 가져오기
+    # ubuntu 환경에서 window-size를 설정하지 않으면 클릭이 안되는 문제 해결
     options = Options()
-    # options.add_argument('--headless=new')
+    options.add_argument('--window-size=1920,1080')  
+    options.add_argument('--headless=new')
     options.add_argument(userAgent)
     CHROME_DRIVER_PATH = os.environ.get("CHROME_DRIVER_PATH")
     # driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
@@ -180,7 +186,8 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.info("KeyboardInterrupt: Server shutting down")
     except Exception as e:
-        logging.error(f"Unexpected error: {e}")
+        traceback.print_exc()
+        logging.error(f"Unexpected error in main: {e}")
     finally:
         postMessage(slackUrl, "Server Down!")
         # mysqlConnect.close()

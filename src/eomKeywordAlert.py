@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Stateless 설정: 크롤 간격과 알림 윈도우를 동일하게 두어
 # 이력 저장 없이 "현재 시간 - WINDOW" 이후 post만 신규로 판단 (중복/누락 최소화)
-KEYWORDS = ["아워레가시", "ourlegacy"]
+# 키워드는 .env의 KEYWORD_LIST(콤마 구분)에서 로드 → 재배포 없이 수정 가능
 ALERT_WINDOW_MINUTES = 10
 CRAWL_INTERVAL_SECONDS = ALERT_WINDOW_MINUTES * 60
 
@@ -140,6 +140,12 @@ if __name__ == "__main__":
 
     # slack bot request url
     slackUrl = os.environ.get("SLACK_URL")
+
+    # 키워드 목록: .env KEYWORD_LIST(콤마 구분)에서 로드 → 재배포 없이 수정
+    KEYWORDS = [k.strip() for k in os.environ.get("KEYWORD_LIST", "").split(",") if k.strip()]
+    if not KEYWORDS:
+        logging.error("KEYWORD_LIST is empty. Set it in .env (e.g. KEYWORD_LIST=아워레가시,ourlegacy)")
+        exit(1)
 
     # chrome --headless를 위한 userAgent 정보
     userAgent = os.environ.get("USER_AGENT")
